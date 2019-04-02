@@ -1,5 +1,5 @@
 # ffmpeg ws-relay
-This is a simple example show up how to streaming video by broadcasting image frames via websocket.
+This is a simple example show up how to streaming video from ffmpeg by broadcasting image frames via websocket.
 
 
 ## Build

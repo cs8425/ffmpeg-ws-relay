@@ -154,10 +154,15 @@ func connCam() {
 			return
 		}
 
-		Vln(5, "[dbg]streamHandler()", n, buf[:8])
+		Vln(5, "[dbg]connCam()", n, buf[:8])
 		pack := make([]byte, n, n)
 		copy(pack, buf[0:n])
+
+		// broacast frame
 		bufCh <- pack
+
+		// do what you want with the frame
+		// ...
 	}
 }
 
