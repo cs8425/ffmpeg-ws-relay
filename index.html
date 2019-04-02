@@ -1,0 +1,106 @@
+<!doctype html>
+<head>
+<title>broacast image stream via websocket</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+html, body {
+	margin: .1em;
+}
+#screen {
+	max-width: calc(100vw - 0.4em);
+	max-height: 100vh;
+}
+</style>
+</head>
+<body>
+	<img id="screen" />
+</body>
+<script src="stats.min.js"></script>
+<script type="text/javascript">
+var pand = function(num) {
+	return (num < 10) ? '0' + num : num + '';
+}
+
+var pand3 = function(num) {
+	var str = (num < 10) ? '0' + num : num + '';
+	return (num < 100) ? '0' + str : str;
+}
+
+function now() {
+	var t = new Date();
+	var out = '[';
+	out += t.getFullYear();
+	out += '/' + pand(t.getMonth() + 1);
+	out += '/' + pand(t.getDate());
+	out += ' ' + pand(t.getHours());
+	out += ':' + pand(t.getMinutes());
+	out += ':' + pand(t.getSeconds());
+	out += '.' + pand3(t.getMilliseconds()) + ']';
+	return out;
+}
+
+var scale = 1.0
+var ws;
+var stats;
+document.addEventListener('DOMContentLoaded', function(e) {
+
+	var img = document.querySelector('#screen')
+	var urlCreator = window.URL || window.webkitURL
+	var createObjectURL = urlCreator.createObjectURL
+	var revokeObjectURL = urlCreator.revokeObjectURL
+
+	var lastFrame = null
+	var updateFrame = function(){
+		img.src = createObjectURL( lastFrame )
+		lastFrame = null
+		//stats.begin()
+		stats.update()
+	}
+
+	img.onload = function(e) {
+		var img = e.target
+		var url = img.src
+		scale = img.naturalWidth / img.width
+		revokeObjectURL(url)
+//		console.log(now(), 'Freeing blob...', url)
+		//stats.end()
+	};
+
+	function open() {
+		if (ws) {
+			return false
+		}
+		ws = new WebSocket('ws://'+window.location.host+'/ws');
+		ws.onopen = function(e) {
+			console.log("OPEN", e)
+		}
+		ws.onclose = function(e) {
+			console.log("CLOSE", e)
+			ws = null;
+			setTimeout(open, 2500)
+		}
+		ws.onmessage = function(e) {
+			// console.log("RESPONSE", e)
+			// display screen
+
+			if(!lastFrame) {
+				requestAnimationFrame(updateFrame)
+			}
+			lastFrame = e.data
+
+//			console.log(now(), 'New screen', lastFrame)
+		}
+		ws.onerror = function(e) {
+			console.log("ERROR", e)
+		}
+	};
+
+	open()
+
+	stats = new Stats();
+	stats.showPanel( 1 ); // 0: fps, 1: ms, 2: mb, 3+: custom
+	document.querySelector('body').appendChild( stats.dom );
+}, false)
+
+</script>
+</html>
