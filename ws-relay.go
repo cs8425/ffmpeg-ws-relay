@@ -15,6 +15,8 @@ import (
 	"flag"
 	"errors"
 
+	"encoding/binary"
+	"io"
 	"bufio"
 	"bytes"
 	"os"
@@ -133,22 +135,21 @@ func main() {
 }
 
 func connCam() {
-	markMap := map[string][]byte{
-		"jpg": []byte("\xFF\xD9"),
-		"png": []byte("IEND\xAE\x42\x60\x82"),
+	markMap := map[string](func (r *bufio.Reader, buf []byte) (int, error)){
+		"jpg": readJPG,
+		"png": readPNG,
 	}
 
-	mark, ok := markMap[*split]
+	decodeFn, ok := markMap[*split]
 	if !ok {
 		Vln(2, "[input][type]err:", *split)
 		return
 	}
-	Vln(5, "[dbg]mark", len(mark), mark)
 	reader := bufio.NewReaderSize(os.Stdin, 8*1024*1024)
+	buf := make([]byte, 8*1024*1024)
+	//reader := os.Stdin
 	for {
-		buf, err := readEnd(reader, mark)
-		n := len(buf)
-		//Vln(5, "[pipe][recv]", n, err)
+		n, err := decodeFn(reader, buf)
 		if err != nil {
 			Vln(2, "[pipe][recv]err:", err)
 			return
@@ -166,19 +167,71 @@ func connCam() {
 	}
 }
 
-func readEnd(r *bufio.Reader, delim []byte) (line []byte, err error) {
-	mark := delim[len(delim)-1]
+func readJPG(r *bufio.Reader, buf []byte) (int, error) {
+	if n, err := io.ReadFull(r, buf[:2]); err != nil {
+		return n, err
+	}
+
+	offset := 2
+	if !bytes.Equal(buf[:2], []byte("\xFF\xD8")) {
+		return offset, errors.New("may not JPG image")
+	}
+
 	for {
-		s, err := r.ReadBytes(mark)
+		s, err := r.ReadSlice('\xD9')
 		if err != nil {
-			return nil, err
+			return offset, err
 		}
 
-		line = append(line, s...)
-		if bytes.HasSuffix(line, delim) {
-			return line, nil
+		copy(buf[offset:], s)
+		offset += len(s)
+		if bytes.HasSuffix(buf[:offset], []byte("\xFF\xD9")) {
+			return offset, nil
 		}
 	}
+}
+
+func readPNG(r *bufio.Reader, buf []byte) (int, error) {
+	if n, err := io.ReadFull(r, buf[:8]); err != nil {
+		return n, err
+	}
+
+	offset := 8
+	if !bytes.Equal(buf[:8], []byte("\x89PNG\x0D\x0A\x1A\x0A")) {
+		return offset, errors.New("may not PNG image")
+	}
+
+	for {
+		n, t, err := readPNGChunk(r, buf[offset:])
+		offset += n
+		if err != nil {
+			return offset, err
+		}
+		if bytes.Equal(t, []byte("IEND")) {
+			return offset, nil
+		}
+	}
+}
+
+func readPNGChunk(r io.Reader, buf []byte) (int, []byte, error){
+	if n, err := io.ReadFull(r, buf[:4]); err != nil { //chunk data length
+		return n, nil, err
+	}
+	dataLen := binary.BigEndian.Uint32(buf[0:4]) + 4 + 4 // chunk type & CRC length
+
+	n, err := io.ReadFull(r, buf[4:4+4]) // chunk type
+	if err != nil {
+		return n+4, nil, err
+	}
+	chunkType := buf[4:4+4]
+
+	n, err = io.ReadFull(r, buf[4+4:dataLen+4]) // chunk data & CRC
+	if err != nil {
+		return n+8, chunkType, err
+	}
+	//Vln(6, "ReadPipe:", dataLen, string(chunkType))
+
+	return n+8, chunkType, nil
 }
 
 func Vln(level int, v ...interface{}) {
